@@ -8,7 +8,6 @@ use thiserror::Error;
 
 pub type Result<T, E = ShellError> = std::result::Result<T, E>;
 
-#[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum ShellError {
     #[error("failed to find the home directory")]
@@ -34,12 +33,26 @@ pub enum ShellType {
 }
 
 impl ShellType {
-    /// Find the history file in the current user's home directory
+    /// Find the path to the history file in the current user's home directory
     fn find_history_path(&self) -> Result<PathBuf> {
         let home = dirs::home_dir().ok_or(ShellError::FindError)?;
         Ok(match &self {
             ShellType::Zsh => home.join(".zsh_history"),
             ShellType::Bash => home.join(".bash_history"),
+        })
+    }
+
+    /// Open the history file in the current user's home directory
+    fn open_history_file(&self) -> Result<File> {
+        let history_path = self.find_history_path()?;
+        File::open(&history_path).map_err(|_| {
+            let history_path = history_path.to_str();
+
+            if let Some(history_path) = history_path {
+                ShellError::OpenError(history_path.to_string())
+            } else {
+                ShellError::InvalidUTF8
+            }
         })
     }
 }
@@ -59,11 +72,18 @@ pub struct Shell {
     shell_type: ShellType,
     /// The command count in the history file
     /// to find the command amount, use `command_frequency` or `commands_ran`
-    pub command_count: Option<usize>,
+    pub invocation_count: Option<usize>,
 }
 
 impl Shell {
-    /// Sets the `command_count` field and returns it, 
+    pub fn from_custom(path: String) -> Self {
+        todo!()
+        // Self {
+        //     shell_type: Custom,
+        //     invocation_count: None,
+        // }
+    }
+    /// Sets the `invocation_count` field and returns it, 
     /// or a `ShellError` on failure
     pub fn commands_ran(&mut self) -> Result<usize> {
         let history_path = self.shell_type.find_history_path()?;
@@ -79,23 +99,36 @@ impl Shell {
         })?;
 
         let line_count = BufReader::new(file).lines().count();
-        self.command_count = Some(line_count);
+        self.invocation_count = Some(line_count);
 
-        self.command_count.ok_or(ShellError::CountError)
+        self.invocation_count.ok_or(ShellError::CountError)
     }
-    /// Returns a map of the frequency of each command and sets the `command_count` field
-    pub fn command_frequency(&mut self) -> Result<HashMap<String, usize>> {
-        let history_path = self.shell_type.find_history_path()?;
 
-        let file = File::open(&history_path).map_err(|_| {
-            let history_path = history_path.to_str();
+    /// Returns a map of the frequency of each command
+    pub fn command_frequency(&self) -> Result<HashMap<String, usize>> {
+        let file = self.shell_type.open_history_file()?;
 
-            if let Some(history_path) = history_path {
-                ShellError::OpenError(history_path.to_string())
-            } else {
-                ShellError::InvalidUTF8
-            }
-        })?;
+        let buf = BufReader::new(file);
+        let mut freq = HashMap::new();
+        buf.lines()
+            .collect::<std::io::Result<Vec<String>>>()
+            .map_err(|_| ShellError::ReadError)?
+            .into_iter()
+            .for_each(|line| {
+                // get the start of the line if there's arguments or just return the line
+                let command = match line.split_once(' ') {
+                    Some((command, _)) => command.to_string(),
+                    _ => line,
+                }; 
+                *freq.entry(command).or_insert(0) += 1;
+            });
+
+        Ok(freq)
+    }
+
+    /// Returns a map of the frequency of each invocation and sets the `invocation_count` field
+    pub fn invocation_frequency(&mut self) -> Result<HashMap<String, usize>> {
+        let file = self.shell_type.open_history_file()?;
 
         let buf = BufReader::new(file);
         let mut freq = HashMap::new();
@@ -109,9 +142,15 @@ impl Shell {
                 *freq.entry(line).or_insert(0) += 1;
             });
 
-        self.command_count = Some(count);
+        self.invocation_count = Some(count);
 
         Ok(freq)
+    }
+
+    pub fn top_commands_and_invocations(&mut self) -> Result<[[String; 5]; 2]> {
+        let freq = self.command_frequency()?;
+
+        todo!()
     }
 }
 
@@ -119,7 +158,7 @@ impl From<ShellType> for Shell {
     fn from(value: ShellType) -> Self {
         Self {
             shell_type: value,
-            command_count: None,
+            invocation_count: None,
         }
     }
 }

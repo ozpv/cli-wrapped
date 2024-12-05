@@ -15,12 +15,10 @@ struct Args {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let mut shell = Shell::from(args.shell_type);
+    let shell = Shell::from(args.shell_type);
     let freq = shell.command_frequency()?;
 
     println!("{freq:?}");
-
-    println!("{}", shell.command_count.unwrap());
 
     Ok(())
 }
