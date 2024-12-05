@@ -1,0 +1,10 @@
+[package]
+name = "cli-wrapped"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.22", features = ["derive"] }
+dirs = "5.0.1"
+thiserror = "2.0.4"
+# pancurses = "0.17.0"
