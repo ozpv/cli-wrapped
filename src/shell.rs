@@ -76,14 +76,15 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn from_custom(path: String) -> Self {
+    pub fn from_custom(path: &str) -> Self {
         todo!()
         // Self {
         //     shell_type: Custom,
         //     invocation_count: None,
         // }
     }
-    /// Sets the `invocation_count` field and returns it, 
+
+    /// Sets the `invocation_count` field and returns it,
     /// or a `ShellError` on failure
     pub fn commands_ran(&mut self) -> Result<usize> {
         let history_path = self.shell_type.find_history_path()?;
@@ -115,12 +116,18 @@ impl Shell {
             .map_err(|_| ShellError::ReadError)?
             .into_iter()
             .for_each(|line| {
-                // get the start of the line if there's arguments or just return the line
-                let command = match line.split_once(' ') {
-                    Some((command, _)) => command.to_string(),
-                    _ => line,
-                }; 
-                *freq.entry(command).or_insert(0) += 1;
+                // TODO: add support for | and && and \ commands
+                // get the first command that isn't a VAR
+                let Some(command) = line
+                    .split(' ')
+                    .filter(|arg| !arg.contains('=') && !arg.is_empty())
+                    .nth(0)
+                else {
+                    // continue interating in for_each
+                    return;
+                };
+
+                *freq.entry(command.to_string()).or_insert(0) += 1;
             });
 
         Ok(freq)
@@ -147,10 +154,39 @@ impl Shell {
         Ok(freq)
     }
 
-    pub fn top_commands_and_invocations(&mut self) -> Result<[[String; 5]; 2]> {
-        let freq = self.command_frequency()?;
+    /// Returns the top five commands and invocations in the history file
+    /// Left: the top five commands
+    /// Right: the top five invocations
+    pub fn top_commands_and_invocations(&mut self) -> Result<(Vec<String>, Vec<String>)> {
+        // sorts by most executed
+        // TODO: for values that are the same sort by name
+        let mut invocation_freq = self
+            .invocation_frequency()?
+            .into_iter()
+            .collect::<Vec<(String, usize)>>();
+        invocation_freq.sort_by(|(_, b), (_, d)| d.cmp(b));
+        invocation_freq.truncate(5);
 
-        todo!()
+        let invocations = invocation_freq
+            .into_iter()
+            .map(|(a, _)| a)
+            .collect::<Vec<String>>();
+
+        let mut command_freq = self
+            .command_frequency()?
+            .into_iter()
+            .collect::<Vec<(String, usize)>>();
+        command_freq.sort_by(|(_, b), (_, d)| d.cmp(b));
+        command_freq.truncate(5);
+
+        let commands = command_freq
+            .into_iter()
+            .map(|(a, _)| a)
+            .collect::<Vec<String>>();
+
+        println!("{commands:?}\n\n\n{invocations:?}");
+
+        Ok((commands, invocations))
     }
 }
 
